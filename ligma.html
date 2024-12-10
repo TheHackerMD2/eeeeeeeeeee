@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Advanced Minecraft Simulator</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #87CEEB;
+        }
+        #crosshair {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 6px;
+            height: 6px;
+            background: white;
+            border-radius: 50%;
+            z-index: 10;
+        }
+        #fps-counter {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            color: white;
+            font-size: 16px;
+        }
+        #inventory {
+            position: fixed;
+            bottom: 10px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 10px;
+            border-radius: 8px;
+        }
+        .inventory-slot {
+            width: 60px;
+            height: 60px;
+            margin: 0 5px;
+            background: rgba(255, 255, 255, 0.2);
+            border: 1px solid white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 14px;
+            color: white;
+        }
+    </style>
+</head>
+<body>
+    <div id="crosshair"></div>
+    <div id="inventory">
+        <div class="inventory-slot" id="slot-grass">0</div>
+        <div class="inventory-slot" id="slot-dirt">0</div>
+        <div class="inventory-slot" id="slot-stone">0</div>
+        <div class="inventory-slot" id="slot-coal">0</div>
+        <div class="inventory-slot" id="slot-iron">0</div>
+        <div class="inventory-slot" id="slot-deepslate">0</div>
+        <div class="inventory-slot" id="slot-diamonds">0</div>
+    </div>
+    <div id="fps-counter">FPS: 0</div>
+    <canvas id="gameCanvas"></canvas>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script>
+        const canvas = document.getElementById("gameCanvas");
+        const renderer = new THREE.WebGLRenderer({ canvas });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.shadowMap.enabled = true;
+
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x87CEEB);
+
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        camera.position.set(0, 2, 5);
+
+        let controlsEnabled = false;
+        document.addEventListener("click", () => {
+            document.body.requestPointerLock();
+        });
+
+        document.addEventListener("pointerlockchange", () => {
+            controlsEnabled = document.pointerLockElement === document.body;
+        });
+
+        const keys = {};
+        document.addEventListener("keydown", (e) => keys[e.key.toLowerCase()] = true);
+        document.addEventListener("keyup", (e) => keys[e.key.toLowerCase()] = false);
+
+        const player = { position: { x: 0, y: 2, z: 0 }, velocity: { x: 0, y: 0, z: 0 }, onGround: true };
+        const gravity = 0.05, moveSpeed = 0.1, jumpForce = 0.3;
+
+        const textures = {
+            grass: new THREE.TextureLoader().load("https://threejs.org/examples/textures/terrain/grasslight-big.jpg"),
+            dirt: new THREE.TextureLoader().load("https://threejs.org/examples/textures/terrain/dirt-01.jpg"),
+            stone: new THREE.TextureLoader().load("https://threejs.org/examples/textures/terrain/stone-01.jpg"),
+            coal: new THREE.TextureLoader().load("https://threejs.org/examples/textures/terrain/stone-01.jpg"), // Example texture for coal
+            iron: new THREE.TextureLoader().load("https://threejs.org/examples/textures/terrain/stone-01.jpg"), // Example texture for iron
+            deepslate: new THREE.TextureLoader().load("https://threejs.org/examples/textures/terrain/stone-01.jpg"), // Example texture for deepslate
+            diamonds: new THREE.TextureLoader().load("https://threejs.org/examples/textures/terrain/stone-01.jpg"), // Example texture for diamonds
+        };
+
+        const blocks = {
+            grass: { texture: textures.grass, name: "Grass" },
+            dirt: { texture: textures.dirt, name: "Dirt" },
+            stone: { texture: textures.stone, name: "Stone" },
+            coal: { texture: textures.coal, name: "Coal" },
+            iron: { texture: textures.iron, name: "Iron" },
+            deepslate: { texture: textures.deepslate, name: "Deepslate" },
+            diamonds: { texture: textures.diamonds, name: "Diamonds" }
+        };
+
+        const generateTerrain = () => {
+            const terrainSize = 20;
+            const blockSize = 1;
+            const blocksInScene = [];
+
+            for (let x = -terrainSize; x < terrainSize; x++) {
+                for (let z = -terrainSize; z < terrainSize; z++) {
+                    const height = Math.floor(Math.random() * 10 + 3);
+                    for (let y = 0; y < height; y++) {
+                        let blockType = "stone"; // Default to stone for underground
+
+                        // Add different blocks for underground layers
+                        if (y === 0) blockType = "grass";
+                        else if (y === 1) blockType = "dirt";
+                        else if (y < 4) blockType = "stone";
+                        else if (y < 6) blockType = "coal";
+                        else if (y < 8) blockType = "iron";
+                        else if (y < 10) blockType = "deepslate";
+                        else blockType = "diamonds";
+
+                        const block = new THREE.Mesh(
+                            new THREE.BoxGeometry(blockSize, blockSize, blockSize),
+                            new THREE.MeshLambertMaterial({ map: blocks[blockType].texture })
+                        );
+                        block.position.set(x, y, z);
+                        block.userData = { type: blockType, id: `${x},${y},${z}` };
+                        scene.add(block);
+                        blocksInScene.push(block);
+                    }
+                }
+            }
+
+            return blocksInScene;
+        };
+
+        const terrain = generateTerrain();
+
+        const light = new THREE.DirectionalLight(0xffffff, 1);
+        light.position.set(10, 20, 10);
+        light.castShadow = true;
+        scene.add(light);
+        scene.add(new THREE.AmbientLight(0x404040));
+
+        const inventory = { grass: 0, dirt: 0, stone: 0, coal: 0, iron: 0, deepslate: 0, diamonds: 0 };
+        const updateInventory = () => {
+            document.getElementById("slot-grass").innerText = inventory.grass;
+            document.getElementById("slot-dirt").innerText = inventory.dirt;
+            document.getElementById("slot-stone").innerText = inventory.stone;
+            document.getElementById("slot-coal").innerText = inventory.coal;
+            document.getElementById("slot-iron").innerText = inventory.iron;
+            document.getElementById("slot-deepslate").innerText = inventory.deepslate;
+            document.getElementById("slot-diamonds").innerText = inventory.diamonds;
+        };
+
+        const dropItem = (block) => {
+            const item = new THREE.Mesh(
+                new THREE.SphereGeometry(0.2, 8, 8),
+                new THREE.MeshBasicMaterial({ color: 0xffff00 })
+            );
+            item.position.set(block.position.x, block.position.y + 1, block.position.z);
+            scene.add(item);
+            let itemVelocity = { x: 0, y: -0.05, z: 0 };
+            function update() {
+                item.position.x += itemVelocity.x;
+                item.position.y += itemVelocity.y;
+                item.position.z += itemVelocity.z;
+            }
+            return update;
+        };
+
+        document.addEventListener("mousedown", (e) => {
+            if (!controlsEnabled) return;
+            const raycaster = new THREE.Raycaster();
+            raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
+            const intersects = raycaster.intersectObjects(terrain);
+            if (intersects.length > 0) {
+                const block = intersects[0].object;
+                scene.remove(block);
+                inventory[block.userData.type]++;
+                updateInventory();
+                dropItem(block)();
+            }
+        });
+
+        // Handle player movement and physics
+        const handleMovement = () => {
+            if (!controlsEnabled) return;
+
+            const movementSpeed = 0.1;
+            if (keys["w"]) player.position.z -= movementSpeed;
+            if (keys["s"]) player.position.z += movementSpeed;
+            if (keys["a"]) player.position.x -= movementSpeed;
+            if (keys["d"]) player.position.x += movementSpeed;
+            if (keys["space"] && player.onGround) player.velocity.y = jumpForce;
+
+            player.velocity.y -= gravity;
+            player.position.y += player.velocity.y;
+
+            camera.position.set(player.position.x, player.position.y, player.position.z);
+        };
+
+        // Main animation loop
+        const animate = () => {
+            requestAnimationFrame(animate);
+            handleMovement();
+            renderer.render(scene, camera);
+        };
+        animate();
+    </script>
+</body>
+</html>
